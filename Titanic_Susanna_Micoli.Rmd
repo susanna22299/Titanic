@@ -1,0 +1,654 @@
+---
+title: "Titanic codice"
+author: "Susanna Micoli"
+date: "2/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##CARICO LE LIBRERIE
+```{r}
+library(tibble)
+library(stringr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidytext)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+#libreria per beeswarm chart
+library(ggbeeswarm)
+library(RColorBrewer)
+library(ellipse)
+library(viridis)
+library(GGally)
+
+```
+
+##IMPORTO IL DATASET
+
+```{r}
+#Importo i dati 
+data<-read_csv("train.csv")
+
+View(data)
+```
+
+Questo dataset raccoglie dati per 821 persone divisi in 12 colonne :
+  1. Survived: Sopravissuti (0 = No; 1 = Si)
+  2. Pclass: Classe Passeggeri (1 = 1st; 2 = 2nd; 3 = 3rd)
+  3. Name: Nome
+  4. Sex: Sesso
+  5. Age: Anni 
+  6. Sibsp: Numero di congiunti a bordo
+  7. Parch: Numero di bambini a bardo
+  8. Ticket: Numero ticket
+  9. Fare: Tariffa per passeggero
+  10.Cabin: Cabina
+  11.Embarked: Porto di partenzan (C = Cherbourg; Q = Queenstown; S = Southampton)
+  + una colanna per numerare 
+Noi utilizzeremo solo un sottogruppo di queste.
+
+#ORGANIZZAZIONE E PULIZIA DEI DATI
+```{r}
+#Seleziono le colonne utili per la mia analisi 
+data<-data%>%
+  select(Survived, Pclass, Age, Sex, SibSp, Embarked, Fare)
+
+#Aggiungo due colonne uguali per survived, pclass, embarked, sibsp, sex
+
+data<- data %>% 
+  mutate(Survivedn = Survived)%>%
+  mutate(Pclassn = Pclass)%>%
+  mutate(Embarkedn = Embarked)%>%
+  mutate(SibSpn = SibSp)%>%
+  mutate(Sexn = Sex)
+
+#Modifico la colonna Embarkedn
+data<- data %>% 
+  mutate(Embarkedn = stringr::str_replace(Embarkedn, "Q", "4"))%>%
+  mutate(Embarkedn = stringr::str_replace(Embarkedn, "C", "5"))%>%
+  mutate(Embarkedn = stringr::str_replace(Embarkedn, "S", "6"))
+  
+#Modifico la colonna Sexn
+data<- data %>% 
+  mutate(Sexn = stringr::str_replace(Sexn, "female", "1"))%>%
+  mutate(Sexn = stringr::str_replace(Sexn, "male", "2"))
+  
+#Trasformo in numero 
+data$Survivedn <- as.numeric(data$Survivedn)
+data$Pclassn <- as.numeric(data$Pclassn)
+data$SibSpn <- as.numeric(data$SibSpn)
+data$Embarkedn <- as.numeric(data$Embarkedn)
+data$Sexn <- as.numeric(data$Sexn)
+
+#Modifico la colonna Survived 
+data<- data %>% 
+  mutate(Survived = stringr::str_replace(Survived, "0", "Deceased"))%>%
+  mutate(Survived = stringr::str_replace(Survived, "1", "Survived"))
+
+
+data%>%
+  count(Age)
+
+#Analizzando la colonna Age scopro che ci sono dei valori NA che elimino
+
+data<-data%>%
+  filter(!is.na(Age))
+
+#Arrotondo per eccesso o difetto l'età, in modo da non avere cifre dopo la virgola 
+data$Age<-round(data$Age,digits=0)
+
+#Aggiungo una colonna per la classe d'età
+data<-data%>%
+  mutate(ClassAge = cut(Age, c(0,10,20,30,40,50,60,70,80,90)))
+data
+
+data<-data%>%
+  filter(!is.na(ClassAge))
+
+data%>%
+  count(ClassAge)
+#Trasformo in character Pclass
+data$Pclass<-as.character(data$Pclass)
+
+#Controllo la colonna Embarked ed elimini i valori NA
+data%>%
+  count(Embarked)
+
+data<-data%>%
+  filter(!is.na(Embarked))
+
+#Controllo la colonna SibSp ed elimino i valori NA
+data%>%
+  count(SibSp)
+
+data$SibSp<-as.character(data$SibSp)
+
+data<-data%>%
+  filter(!is.na(SibSp))
+#Controllo la colonna Fare ed elimino i valori NA
+data%>%
+  count(Fare)
+
+data<-data%>%
+  filter(!is.na(Fare))
+
+
+data
+```
+
+#INIZIO LA MIA ANALISI - VISUALIZZAZIONE
+
+```{r}
+#Quante persone sono decedute e quante persone sono sopravvissute?
+
+d<-data%>%
+  count(Survived)
+  
+#Calcolo la percentuale 
+d$fraction <- d$n / sum(d$n)
+
+# Calcolo la percentualo cumulativa
+d$ymax <- cumsum(d$fraction)
+
+# Calcola la parte inferiore di ogni rettangolo
+d$ymin <- c(0, head(d$ymax, n=-1))
+
+# Calcolo la posizione del label
+d$labelPosition <- (d$ymax + d$ymin) / 2
+
+# Calcolo una buona label
+d$label <- paste0(d$Survived, "\n value: ", d$n)
+
+# Realizzo il grafico
+ggplot(d, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Survived)) +
+  geom_rect() +
+  geom_label( x=3.5, aes(y=labelPosition, label=label), size=3.5) +
+  scale_fill_brewer(palette=4) +
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme(legend.position = "none")+
+  labs(title= "Ci sono stai più sopravvissuti o deceduti?")
+  
+```
+
+```{r}
+#Non ce l’hanno fatta più della metà delle persone a bordo, in particolare su un totale di 711 persone sono morte 424 e sopravvissute 287.
+```
+
+
+```{r}
+#C'erano più donne o più uomini a bordo?
+s<-data%>%
+  count(Sex)
+
+# Calcola la posizione del label
+s <- s %>% 
+  arrange(desc(Sex)) %>%
+  mutate(prop = n / sum(s$n) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+# Basic piechart
+ggplot(s, aes(x="", y=prop, fill=Sex)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  geom_text(aes(y = ypos, label = n), color = "darkgrey", size=6) +
+  scale_fill_manual("legend", values = c("male" = "lightblue", "female" = "Pink"))
+```
+
+```{r}
+#La maggior parte erano uomini
+```
+
+```{r}
+#Sono decedute o sopravvissute più donne o uomini?
+
+ggplot(data, aes(x = Survived, fill=Sex)) + 
+ geom_bar(position = "dodge") +
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), vjust=-0.5)+
+  labs(title= "Sopravvissuti o deceduti", subtitle = "Donne e Uomini",fill = "Type")+
+ theme_classic()+
+  scale_fill_manual("legend", values = c("male" = "lightblue", "female" = "orchid"))
+
+
+
+```
+
+```{r}
+#La maggior parte dei non sopravvissuti è di genere maschile. La maggior parte dei sopravissuti è di genere femminile.
+```
+
+
+```{r}
+#Com'era distribuita l'età dei passeggeri?
+
+ggplot(data, aes(x = Age)) +
+ geom_density(fill="lightblue")
+
+```
+
+```{r}
+#La maggior parte dei passeggeri ha un'età compresa tra 20 e 35 anni. Il picco maggiore è preceduto da una curva più piccola che comprende l'età tra 0 e 5 anni. Questo si spiega perchè molti erano bambini di giovani coppie.
+```
+
+
+```{r}
+#Numerosità di passeggeri per classi d'età rispetto al sesso 
+
+ggplot(data, aes(x = ClassAge, fill=Sex)) +
+  geom_bar(position = position_dodge()) +
+  geom_text(stat='count', 
+            aes(label=stat(count)), 
+            position = position_dodge(width=1), 
+            vjust=-0.5)+
+  theme_classic()
+
+```
+
+```{r}
+#Con questo grafico notiamo che la maggior parte di passeggeri nella classe d'età 20-30 è di sesso maschile. A quell'epoca i ragazzi avevano maggiore possibilità economiche rispetto alle ragazze e quindi potevano permettersi di viaggiare.
+```
+
+
+```{r}
+#Sono decedute più persone anziane o più giovani?
+
+ggplot(data=data, aes(x=Age, group=Survived, fill=Survived)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+```
+
+```{r}
+#Sono sopravvissuti per la maggior parte bambini e adulti, mentre gli anziani non sono sopravvissuti 
+```
+
+
+```{r}
+#A chi veniva data la precedenza per salvarsi? Agli uomini o alle donne?
+#grafico in cui metto in ralazione l'età dei passeggeri con il loro sesso e li coloro in base a se sono deceduti o sopravvissuti 
+
+ggplot(data, aes(Sex, Age, col = Survived)) + 
+  geom_beeswarm(size = 1.5)+
+  coord_flip()+
+  theme_classic()
+```
+
+```{r}
+#Veniva data la priorità alle donne e ai bambini per salvarsi.
+```
+
+
+```{r}
+#C'erano più persone in prima, seconda o terza classe?
+
+c<-data%>%
+  count(Pclass)
+
+# Compute the position of labels
+c <- c %>% 
+  arrange(desc(Pclass)) %>%
+  mutate(prop = n / sum(s$n) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+# Basic piechart
+ggplot(c, aes(x="", y=prop, fill=Pclass)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  geom_text(aes(y = ypos, label = n), color = "black", size=6) +
+  scale_fill_brewer(palette="Set7")
+  #scale_fill_manual("legend", values = c("1" = "Yello", "2" = "Pink", "3" = ""))
+```
+
+```{r}
+#La metà dei passeggeri apparteneva alla terza classe, l'altra metà era distribuita quasi equamente alla seconda e terza classe.
+```
+
+
+```{r}
+#Appartenere ad una classe piuttosto che ad un'altra ha influito sulla salvezza?
+
+ggplot(data, aes(x = Survived, fill=Pclass )) +
+ geom_bar(position = position_dodge())+
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), 
+           vjust=-0.5)+
+ theme_classic()+
+  scale_fill_brewer(palette="Set3")
+```
+
+```{r}
+#Si, appartenere ad una classe rispetto ad un'altra ha influito sulla salvezza. Ci sono stati passeggeri favoriti rispetto ad altri.
+```
+
+
+```{r}
+#non nella presentazione
+data%>%
+  filter(Survived == "Survived")%>%
+  ggplot( aes(x = Pclass, fill=Sex )) +
+   geom_bar(position = position_dodge())+
+   geom_text(stat="count", 
+             aes(label=stat(count)), 
+             position = position_dodge(width=1), 
+             vjust=-0.5)+
+   theme_classic()+
+    scale_fill_brewer(palette="Set3")
+```
+
+
+```{r}
+#Passeggeri sopravvissuti maschi divisi per classe di appartenenza 
+TotM<-data%>%
+  filter(Sex == "male")%>%
+  group_by(Pclass)%>%
+  summarise(count = n())
+TotM
+
+PercM<-data%>%
+  filter(Survived == "Survived" & Sex == "male")%>%
+  group_by(Pclass)%>%
+  summarise(count = n())%>%
+  mutate(Percentuale = (count/TotM$count)* 100)
+PercM
+
+  ggplot(PercM, mapping = aes(x = Pclass, y = Percentuale,  fill=Pclass )) +
+   geom_bar(stat = "identity")+
+   theme_classic()+
+    geom_text( aes(label= round(Percentuale)), 
+             position = position_dodge(width=1), 
+             vjust=-0.5)+
+    scale_fill_brewer(palette="Set3")
+
+```
+
+```{r}
+#Passeggeri sopravvissuti femmine divisi per classe di appartenenza 
+TotF<-data%>%
+  filter(Sex == "female")%>%
+  group_by(Pclass)%>%
+  summarise(count = n())
+TotF
+
+PercF<-data%>%
+  filter(Survived == "Survived" & Sex == "female")%>%
+  group_by(Pclass)%>%
+  summarise(count = n())%>%
+  mutate(Percentuale = (count/TotF$count)* 100)
+PercF
+
+ ggplot(PercF, mapping = aes(x = Pclass, y = Percentuale,  fill=Pclass )) +
+   geom_bar(stat = "identity")+
+   theme_classic()+
+    geom_text( aes(label= round(Percentuale)), 
+             position = position_dodge(width=1), 
+             vjust=-0.5)+
+    scale_fill_brewer(palette="Set3")
+```
+
+```{r}
+#La probabilità di sopravvivere per il genere femminile è molto alta nella prima e seconda classe, nella terza classe la probabilità è quasi del 50%.
+
+#Per il genere maschile la probabilità di sopravvivere non è molto alta in nessuna delle 3 classi, ma l'appartenenza alla prima classe ha sicuramente influito.
+```
+
+
+```{r}
+#non nella presentazione
+#CLASSE DI APPARTENENZA E SESSO
+
+ggplot(data, aes(x = Pclass, fill=Sex )) +
+ geom_bar(position = position_dodge())+
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), 
+           vjust=-0.5)+
+ theme_classic()+
+  scale_fill_manual("legend", values = c("male" = "lightblue", "female" = "Pink"))
+```
+
+
+```{r}
+
+#non nella presentazione
+#Donne e uomini deceduti rispetto alla classe di appartenenza
+
+data%>%
+  filter(Survived == "Deceased")%>%
+  ggplot( aes(x = Pclass, fill=Sex )) +
+   geom_bar(position = position_dodge())+
+   geom_text(stat="count", 
+             aes(label=stat(count)), 
+             position = position_dodge(width=1), 
+             vjust=-0.5)+
+   theme_classic()+
+    scale_fill_brewer(palette="Set3")
+```
+
+```{r}
+
+#non nella presentazione
+ggplot(data, aes(x = Pclass, fill=Sex )) +
+ geom_bar(position = position_dodge())+
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), 
+           vjust=-0.5)+
+ theme_classic()+
+  scale_fill_brewer(palette="Set3")
+```
+
+
+```{r}
+#non nella presentazione
+#Come varia l'età rispetto alla classe di appartenenza?
+ggplot(data=data, aes(x=Age, group=Pclass, fill=Pclass)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+
+```
+
+
+```{r}
+#Come varia l'età rispetto alla classe di appartentenza nei non sopravvissuti?
+
+nsop<-data%>%
+  filter(Survived == "Deceased")
+
+#grafico densità 2
+ggplot(data=nsop, aes(x=Age, group=Pclass, fill=Pclass)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+
+```
+
+```{r}
+#Come varia l'età rispetto alla classe di appartentenza nei sopravvissuti?
+sop<-data%>%
+  filter(Survived == "Survived")
+
+
+#grafico densità 2
+ggplot(data=sop, aes(x=Age, group=Pclass, fill=Pclass)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+
+```
+
+```{r}
+#I bambini di prima e seconda classe si sono salvati, la terza classe ha una forma a campana che denota come quasi tutti si siano salvati in modo equidistribuito.
+#Gli anziani della prima classe sono deceduti.
+```
+
+
+```{r}
+#Come varia la sopravvivenza rispetto al porto d'imbarco?
+
+ggplot(data, aes(x = Embarked, fill=Survived ))+
+ geom_bar(position = position_dodge())+
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), 
+           vjust=-0.5)+
+ theme_classic()+
+  scale_fill_manual("legend", values = c("Deceased" = "deepskyblue2", "Survived" = "brown1"))
+
+```
+
+```{r}
+#Non ci aspettiamo che i passeggeri provenienti da un porto abbiano più possibilità di sopravvivere rispetto ad altri passeggeri provenienti da porti differenti.
+#Verifichiamo con il grafico sottostante.
+```
+
+
+```{r}
+#Quanti passeggeri ci sono per classe rispetto al porto di imbarco?
+
+ggplot(data, aes(x = Embarked, fill=Pclass ))+
+ geom_bar(position = position_dodge())+
+ geom_text(stat="count", 
+           aes(label=stat(count)), 
+           position = position_dodge(width=1), 
+           vjust=-0.5)+
+ theme_classic()+
+  scale_fill_brewer(palette="Set1")
+```
+
+```{r}
+#Grafico che ci conferma che non c'è relazione tra porto di imbarco e soppravvivenza
+```
+
+
+```{r}
+#come varia il prezzo della tariffa del biglietto?
+
+data%>%
+  count(Fare)
+
+mean(data$Fare)
+
+ggplot(data, aes(x = Fare)) +
+ geom_density(fill="lightgreen")+
+  theme_classic()
+
+
+```
+
+```{r}
+#Il massimo della tariffa è di 512 mentre prezzo medio di un biglietto è di 35 sterline.
+```
+
+
+```{r}
+#Come varia il prezzo rispetto ad ogni classe di appartenenza?
+
+ggplot(data=data, aes(x=Fare, group=Pclass, fill=Pclass)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+```
+
+```{r}
+#La terza classe ha una variazione di prezzo maggiore rispetto alla terza e seconda classe. Questo perchè le persone di seconda e terza classe si "adattano" più facilmente, rispetto ai passeggeri di prima classe che spesso cercano la comodità e qualche sfizio.
+```
+
+
+```{r}
+#non nella presentazione
+#Tariffa del biglietto rispetto alla soppravvivenza
+
+ggplot(data=data, aes(x=Fare, group=Survived, fill=Survived)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_classic()
+```
+```{r}
+#non nella pesentazione
+
+#sesso in relazione alla tariffa e alla soppravvivenza
+ggplot(data, aes(Sex, Fare, col = Survived)) + 
+  geom_beeswarm(size = 1.5)+
+  coord_flip()+
+  theme_classic()
+```
+
+```{r}
+#Erano di più le famiglie o le persone che viaggiavano da sole?
+
+ggplot(data, aes(x = SibSp, fill=Sex)) +
+  geom_bar(position = position_dodge()) +
+  geom_text(stat='count', 
+            aes(label=stat(count)), 
+            position = position_dodge(width=1), 
+            vjust=-0.5)+
+  theme_classic()
+```
+
+```{r}
+#La maggior parte dei passseggeri viaggiava da solo o in compagnia di al massimo una persona.
+```
+
+
+```{r} 
+#non nella presentazione
+prova<-data%>%
+  group_by(SibSp, Survived)%>%
+  summarise(count = n())
+prova
+
+data%>%
+  filter(SibSp =="5" & Survived == "Deceased")%>%
+  count(Survived)
+
+prova%>%
+ggplot(aes(x = SibSp, y = count, fill =Survived))+
+  geom_col(position = "dodge")+
+  theme_classic()
+prova
+```
+
+
+
+
+```{r}
+#matrice di correlazione
+#non nella presentazione
+
+data
+mc <- data%>%
+  select(Survivedn, Pclassn, Age, Embarkedn, Fare, SibSpn, Sexn)
+mc <- cor(mc)
+
+
+my_colors <- brewer.pal(5, "Spectral")
+my_colors <- colorRampPalette(my_colors)(100)
+ 
+# Order the correlation matrix
+ord <- order(mc[1, ])
+data_ord <- mc[ord, ord]
+plotcorr(data_ord , col=my_colors[data_ord*50+50] , mar=c(1,1,1,1)  )
+```
+
+```{r}
+#matrice di correlazione
+corrplot(prova4, method = 'ellipse', order = 'AOE', type = 'upper')
+```
+
+```{r}
+#Esiste una correlazione marcata tra tariffa del prezzo e classe di appartenenza
+#Esiste una correlazione tra prezzo della tariffa e sopravvivenza 
+#Esiste una correlazione tra sopravvivenza e appartenenza ad una classe piuttosto che ad un’altra.
+#Esiste una correlazione accentuata anche tra sesso e sopravvivenza
+
+```
+
+
+
